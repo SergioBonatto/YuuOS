@@ -1,6 +1,29 @@
 #include "kernel.h"
 
+typedef unsigned char uint8_t;
+typedef unsigned int uint32_t;
+typedef uint32_t size_t;
+
 extern char __bss[], __bss_end[], __stack_top[];
+
+void *memset(void *buf, char c, size_t n) {
+    uint8_t *p = (uint8_t *) buf;
+    while (n--)
+        *p++ = c;
+    return buf;
+}
+
+__attribute__((section(".text.boot")))
+__attribute__((naked))
+void boot(void) {
+    __asm__ __volatile__(
+        "mv sp, %[stack_top]\n" // Set the stack pointer
+        "j kernel_main\n"       // Jump to the kernel main function
+        :
+        : [stack_top] "r" (__stack_top) // Pass the stack top address as %[stack_top]
+    );
+}
+
 
 struct sbiret sbi_call(
 		long arg0,
@@ -18,8 +41,8 @@ struct sbiret sbi_call(
 	register long a3 __asm__("a3") = arg3;
 	register long a4 __asm__("a4") = arg4;
 	register long a5 __asm__("a5") = arg5;
-	register long a6 __asm__("a6") = eid;
-	register long a7 __asm__("a7") = fid;
+	register long a6 __asm__("a6") = fid;
+	register long a7 __asm__("a7") = eid;
 
 	__asm__ __volatile__ ( "ecall"
 			: "=r"(a0), "=r"(a1)

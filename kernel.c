@@ -1,4 +1,5 @@
 #include "kernel.h"
+#include "common.h"
 
 typedef unsigned char uint8_t;
 typedef unsigned int uint32_t;
@@ -17,8 +18,8 @@ __attribute__((section(".text.boot")))
 __attribute__((naked))
 void boot(void) {
     __asm__ __volatile__(
-        "mv sp, %[stack_top]\n" // Set the stack pointer
-        "j kernel_main\n"       // Jump to the kernel main function
+        "mv sp, %[stack_top]\n" 				// Set the stack pointer
+        "j kernel_main\n"       				// Jump to the kernel main function
         :
         : [stack_top] "r" (__stack_top) // Pass the stack top address as %[stack_top]
     );
@@ -57,14 +58,12 @@ void putchar(char ch){
 	sbi_call(ch, 0, 0, 0, 0, 0, 0, 1 /* console putchar */);
 }
 
-void kernel_main(void){
-	const char *s = "\n\nHello my World!\n";
-	for (int i = 0; s[i] != '\0'; i++) {
-		putchar(s[i]);
-	}
-	
-	for (;;){
-		__asm__ __volatile__ ("wfi");
-	}
 
+void kernel_main(void) {
+    kprintf("\n\nHello %s\n", "my World!");
+    kprintf("1 + 2 = %d, %x\n", 1 + 2, 0x1234abcd);
+
+    for (;;) {
+        __asm__ __volatile__("wfi");
+    }
 }

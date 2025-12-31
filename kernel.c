@@ -39,4 +39,9 @@ void kernel_main(void){
 	for (int i = 0; s[i] != '\0'; i++) {
 		putchar(s[i]);
 	}
+	
+	for (;;){
+		__asm__ __volatile__ ("wfi");
+	}
+
 }

@@ -1,4 +1,4 @@
-#!/bin/bash
+!/bin/bash
 set -xue
 
 QEMU=qemu-system-riscv32

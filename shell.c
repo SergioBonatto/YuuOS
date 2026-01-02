@@ -26,6 +26,13 @@ prompt:
             kprintf("achou o easter egg, falta só o do site\n");
         else if (strcmp(cmdline, "exit") ==0)
             exit();
+        else if (strcmp(cmdline, "readfile") == 0){
+            char buf[128];
+            int len = readfile("hello.txt", buf, sizeof(buf));
+            buf[len] = '\0';
+            kprintf("%s\n", buf);
+        } else if (strcmp(cmdline, "writefile") == 0)
+            writefile("hello.txt", "hello from shell!\n", 19);
         else 
             kprintf("unknow command: %\n", cmdline);
     }

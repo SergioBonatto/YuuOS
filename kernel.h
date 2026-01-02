@@ -14,6 +14,9 @@
 #define PROC_RUNNABLE   1       // Runnable process
 #define PROC_EXITED     2
 #define SCAUSE_ECALL    8
+#define FILES_MAX       2
+
+
 
 // The base virtual address of an application image. 
 // This needs to match the starting address defined in `user.ld`.
@@ -51,6 +54,7 @@
 #define VIRTQ_AVAIL_F_NO_INTERRUPT  1
 #define VIRTIO_BLK_T_IN             0
 #define VIRTIO_BLK_T_OUT            1
+#define DISK_MAX_SIZE   align_up(sizeof(struct file) * FILES_MAX, SECTOR_SIZE)
 
 // Virtqueue Descriptor Table entry
 struct virtq_desc {
@@ -150,6 +154,35 @@ struct trap_frame {
     uint32_t s11;
     uint32_t sp;
 } __attribute__((packed));
+
+struct tar_header {
+    char name[100];
+    char mode[8];
+    char uid[8];
+    char git[8];
+    char size[12];
+    char mtime[12];
+    char checksum[8];
+    char type;
+    char linkname[100];
+    char magic[6];
+    char version[2];
+    char uname[32];
+    char gname[32];
+    char devmajor[8];
+    char devminor[8];
+    char prefix[155];
+    char padding[12];
+    char data[];        // array pointing to the data area following the header 
+                        // (flexible array member)
+}__attribute((packed));
+
+struct file {
+    kbool   in_use;     // indicates if this file entry in use
+    char    name[100];  // File name
+    char    data[1024]; // File content
+    size_t  size;       // File size
+};
 
 #define READ_CSR(reg) 																				  \
 	({ 																													  \

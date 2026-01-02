@@ -9,13 +9,15 @@ typedef             uint32_t    size_t;
 typedef             uint32_t    paddr_t;
 typedef             uint32_t    vaddr_t;
 
-#define true        1
-#define false       0
-#define NULL        ((void *) 0)
-#define PAGE_SIZE   4096
-#define SYS_PUTCHAR 1
-#define SYS_GETCHAR 2
-#define SYS_EXIT    3
+#define true            1
+#define false           0
+#define NULL            ((void *) 0)
+#define PAGE_SIZE       4096
+#define SYS_PUTCHAR     1
+#define SYS_GETCHAR     2
+#define SYS_EXIT        3
+#define SYS_READFILE    4
+#define SYS_WRITEFILE   5
 #define align_up(value, align)      __builtin_align_up(value, align)
 #define is_aligned(value, align)    __builtin_is_aligned(value, align)
 #define offsetof(type, member)      __builtin_offsetof(type, member)

@@ -242,6 +242,8 @@ struct process *create_process(const void *image, size_t image_size){
         )
         map_page(page_table, paddr, paddr, PAGE_R | PAGE_W | PAGE_X);
 
+    map_page(page_table, VIRTIO_BLK_PADDR, VIRTIO_BLK_PADDR, PAGE_R | PAGE_W);
+
     // map user pages
     for (
             uint32_t off = 0;
@@ -299,6 +301,7 @@ struct sbiret sbi_call(
 	return (struct sbiret){.error = a0, .value = a1};
 }
 
+
 void *memset(void *buf, char c, size_t n) {
     uint8_t *p = (uint8_t *) buf;
     while (n--)
@@ -350,6 +353,11 @@ void putchar(char ch){
 
 void handle_syscall(struct trap_frame *f){
     switch (f->a3){
+        case SYS_EXIT:
+            kprintf("process %d exited\n", current_proc->pid);
+            current_proc->state = PROC_EXITED;
+            yield();
+            PANIC("unreachable");
         case SYS_GETCHAR:
             while (1){
                 long ch = getchar();
@@ -406,6 +414,44 @@ void proc_b_entry(void){
         yield();
     }
 }
+
+uint32_t virtio_reg_read32(unsigned offset){
+    return *((volatile uint32_t *) (VIRTIO_BLK_PADDR + offset));
+}
+
+void virtio_reg_write32(unsigned offset, uint32_t value){
+    *((volatile uint64_t *) (VIRTIO_BLK_PADDR + offset)) = value;
+}
+
+void virtio_reg_fetch_and_or32(unsigned offset, uint32_t value){
+    virtio_reg_write32(offset, virtio_reg_read32(offset) | value);
+}
+
+struct      virtio_virtq    *blk_request_vq;
+struct      virtio_blk_req  *blk_req;
+paddr_t     blk_req_padrr;
+uint64_t    blk_capacity;
+
+void virtio_blk_init(void){
+    if(virtio_reg_read32(VIRTIO_REG_MAGIC) != 0x74726976)
+        PANIC("virtio: invalid magic value");
+    if (virtio_reg_read32(VIRTIO_REG_VERSION) != 1)
+        PANIC("virtio: invalid version");
+    if (virtio_reg_read32(VIRTIO_REG_DEVICE_ID) != VIRTIO_DEVICE_BLK)
+        PANIC("virtio: invalid device id");
+
+    // 1. Reset the devide
+    virtio_reg_write32(VIRTIO_REG_DEVICE_STATUS, 0);
+
+    // 2. Set the ACKNOWLEDGE status bit: We found the device.
+        virtio_reg_fetch_and_or32(VIRTIO_REG_DEVICE_STATUS, VIRTIO_STATUS_ACK);
+    
+    // TODO: Continuar daqui
+    // FIX: Virtio device initialization
+
+
+}
+
 
 void kernel_main(void) {
     kmemset(__bss, 0, (size_t) __bss_end - (size_t) __bss);

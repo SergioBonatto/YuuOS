@@ -24,6 +24,8 @@ prompt:
             kprintf("hello my world!\n");
         else if (strcmp(cmdline, "brapao") == 0)
             kprintf("achou o easter egg, falta só o do site\n");
+        else if (strcmp(cmdline, "exit") ==0)
+            exit();
         else 
             kprintf("unknow command: %\n", cmdline);
     }

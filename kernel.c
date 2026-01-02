@@ -8,6 +8,7 @@ typedef uint32_t size_t;
 extern char __bss[], __bss_end[], __stack_top[];
 extern char __free_ram[], __free_ram_end[];
 extern char __kernel_base[];
+extern char _binary_shel_bin_start[], _binary_shell_bin_size[];
 
 paddr_t alloc_pages(uint32_t n){
     static paddr_t next_paddr = (paddr_t) __free_ram;
@@ -30,6 +31,11 @@ void boot(void) {
         :
         : [stack_top] "r" (__stack_top) // Pass the stack top address as %[stack_top]
     );
+}
+
+
+void user_entry(void) {
+    PANIC("not yet implemented");
 }
 
 void map_page(
@@ -189,7 +195,7 @@ struct process *proc_b;
 struct process *current_proc;
 struct process *idle_proc;
 
-struct process *create_process(uint32_t pc){
+struct process *create_process(const void *image, size_t image_size){
     // find  an unused process control structure
     struct process *proc = NULL;
     int i;
@@ -220,7 +226,7 @@ struct process *create_process(uint32_t pc){
     *--sp = 0;                      // s2
     *--sp = 0;                      // s1
     *--sp = 0;                      // s0
-    *--sp = (uint32_t) pc;          // ra
+    *--sp = (uint32_t) user_entry;  // ra
 
     // Map kernel pages
     uint32_t *page_table = (uint32_t *) alloc_pages(1);
@@ -230,6 +236,25 @@ struct process *create_process(uint32_t pc){
                     paddr += PAGE_SIZE
         )
         map_page(page_table, paddr, paddr, PAGE_R | PAGE_W | PAGE_X);
+
+    // map user pages
+    for (
+            uint32_t off = 0;
+            off < image_size;
+            off += PAGE_SIZE
+        ) {
+        paddr_t page = alloc_pages(1);
+
+        // handle the case where the data to be copied 
+        // is smaller than the page size
+        size_t remaining = image_size - off;
+        size_t copy_size = PAGE_SIZE <= remaining ? PAGE_SIZE : remaining;
+
+        // fill and map the page
+        kmemcpy((void *) page, image + off, copy_size);
+        map_page(page_table, USER_BASE + off, page, 
+                PAGE_U | PAGE_R | PAGE_W | PAGE_X);
+    }
 
     // Initialize fields.
     proc->pid           = i + 1;
@@ -355,13 +380,11 @@ void kernel_main(void) {
 
     WRITE_CSR(stvec, (uint32_t) kernel_entry);
 
-    idle_proc = create_process((uint32_t) NULL);
+    idle_proc = create_processs(NULL, 0);
     idle_proc->pid = 0; //idle
     current_proc = idle_proc;
-
-    proc_a = create_process((uint32_t) proc_a_entry);
-    proc_b = create_process((uint32_t) proc_b_entry);
-    /* proc_a_entry(); */
+    
+    create_process(_binary_shell_bin_start, (size_t) _binary_shell_bin_size);
 
     yield();
 

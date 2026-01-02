@@ -12,6 +12,7 @@
 #define PROCS_MAX       8       // Maximum number of processes
 #define PROC_UNUSED     0       // Unised process control structure 
 #define PROC_RUNNABLE   1       // Runnable process
+#define SCAUSE_ECALL    8
 
 // The base virtual address of an application image. 
 // This needs to match the starting address defined in `user.ld`.

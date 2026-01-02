@@ -69,8 +69,6 @@ void map_page(
     table0[vpn0]        = ((paddr / PAGE_SIZE) << 10) | flags | PAGE_V;
 }
 
-
-
 __attribute__((naked))
 __attribute__((aligned(4)))
 void kernel_entry(void) {
@@ -340,19 +338,33 @@ void yield(void) {
     switch_context(&prev->sp, &next->sp);
 }
 
+void putchar(char ch){
+	sbi_call(ch, 0, 0, 0, 0, 0, 0, 1 /* console putchar */);
+}
 
+void handle_syscall(struct trap_frame *f){
+    switch (f->a3){
+        case SYS_PUTCHAR:
+            putchar(f->a0);
+            break;
+        default:
+            PANIC("unexpected suscall a3=%x\n", f->a3);
+    }
+}
 
 void handle_trap(struct trap_frame *f) {
     uint32_t scause     = READ_CSR(scause);
     uint32_t stval      = READ_CSR(stval);
     uint32_t user_pc    = READ_CSR(sepc);
-
-    PANIC("unexpected trap scause=%x, stval=%x, sepc=%x\n", scause, stval, user_pc);
+    if (scause == SCAUSE_ECALL){
+        handle_syscall(f);
+        user_pc += 4;
+    } else {
+        PANIC("unexpected trap scause=%x, stval=%x, sepc=%x\n", scause, stval, user_pc);
+    }
+    WRITE_CSR(sepc, user_pc);
 }
 
-void putchar(char ch){
-	sbi_call(ch, 0, 0, 0, 0, 0, 0, 1 /* console putchar */);
-}
 
 void delay(void){
     for (int i = 0; i < 30000000; i++)

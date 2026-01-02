@@ -1,4 +1,4 @@
-!/bin/bash
+#!/bin/bash
 set -xue
 
 QEMU=qemu-system-riscv32
@@ -16,7 +16,7 @@ $OBJCOPY -Ibinary -Oelf32-littleriscv shell.bin shell.bin.o
 
 # Build the kernel
 $CC $CFLAGS -Wl,-Tkernel.ld -Wl,-Map=kernel.map -o kernel.elf \
-    kernel.c common.c
+    kernel.c common.c shell.bin.o
 
 # Start QEMU
 $QEMU -machine virt -bios default -nographic -serial mon:stdio --no-reboot \

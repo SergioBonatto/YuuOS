@@ -8,7 +8,7 @@ typedef uint32_t size_t;
 extern char __bss[], __bss_end[], __stack_top[];
 extern char __free_ram[], __free_ram_end[];
 extern char __kernel_base[];
-extern char _binary_shel_bin_start[], _binary_shell_bin_size[];
+extern char _binary_shell_bin_start[], _binary_shell_bin_size[];
 
 paddr_t alloc_pages(uint32_t n){
     static paddr_t next_paddr = (paddr_t) __free_ram;
@@ -33,9 +33,15 @@ void boot(void) {
     );
 }
 
-
-void user_entry(void) {
-    PANIC("not yet implemented");
+__attribute__((naked)) void user_entry(void) {
+    __asm__ __volatile__(
+        "csrw sepc,     %[sepc]     \n"
+        "csrw sstatus,  %[sstatus]  \n"
+        "sret                       \n"
+        :
+        :   [sepc] "r" (USER_BASE),
+            [sstatus] "r" (SSTATUS_SPIE)
+    );
 }
 
 void map_page(
@@ -380,7 +386,7 @@ void kernel_main(void) {
 
     WRITE_CSR(stvec, (uint32_t) kernel_entry);
 
-    idle_proc = create_processs(NULL, 0);
+    idle_proc = create_process(NULL, 0);
     idle_proc->pid = 0; //idle
     current_proc = idle_proc;
     

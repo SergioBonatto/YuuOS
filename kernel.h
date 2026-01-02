@@ -17,12 +17,14 @@
 // This needs to match the starting address defined in `user.ld`.
 #define USER_BASE       0x1000000
 
-#define SATP_SV32   (1u << 31)
-#define PAGE_V      (1 << 0)    // Valid bit (entry is enabled)
-#define PAGE_R      (1 << 1)    // Readable
-#define PAGE_W      (1 << 2)    // Writable
-#define PAGE_X      (1 << 3)    // Executable
-#define PAGE_U      (1 << 4)    // User (accessible in user mod)
+#define SATP_SV32       (1u << 31)
+#define PAGE_V          (1 << 0)    // Valid bit (entry is enabled)
+#define PAGE_R          (1 << 1)    // Readable
+#define PAGE_W          (1 << 2)    // Writable
+#define PAGE_X          (1 << 3)    // Executable
+#define PAGE_U          (1 << 4)    // User (accessible in user mod)
+#define SSTATUS_SPIE    (1 <<5 )
+
 
 struct process {
     int         pid;            // Process ID

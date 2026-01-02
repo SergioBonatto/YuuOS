@@ -22,19 +22,72 @@ YuuOS is a minimalist, monolithic operating system kernel designed for the RISC-
 - `kernel.ld`, `user.ld`: Linker scripts for the kernel and user applications.
 - `run.sh`: A script to build and run the OS using QEMU.
 
-## Building and Running
+## Getting Started
 
-To build and run YuuOS, you will need:
+Follow these instructions to set up the toolchain and run YuuOS.
 
-- `clang` targeting `riscv32-unknown-elf`
-- `llvm-objcopy`
-- `qemu-system-riscv32`
+### Prerequisites
 
-The `run.sh` script automates the process of compiling the kernel and shell, creating a disk image, and launching the OS in QEMU.
+YuuOS requires a specific toolchain for building the RISC-V 32-bit kernel and user-space applications. You will need:
+
+- **Clang Compiler:** To compile C code for the `riscv32-unknown-elf` target.
+- **LLD Linker:** The LLVM linker, used by Clang.
+- **LLVM Objcopy:** To manipulate the compiled ELF binaries.
+- **QEMU:** To emulate the RISC-V machine and run the OS.
+
+Below are installation instructions for common operating systems.
+
+#### macOS (with Homebrew)
 
 ```bash
-./run.sh
+brew install llvm qemu
 ```
+
+The `llvm` package includes `clang`, `lld`, and `llvm-objcopy`. You may need to add LLVM's bin directory to your `PATH` for the tools to be found automatically.
+
+```bash
+export PATH="$(brew --prefix llvm)/bin:$PATH"
+```
+
+#### Ubuntu/Debian
+
+```bash
+sudo apt update
+sudo apt install clang lld llvm qemu-system-misc
+```
+
+These packages will provide the necessary `clang`, `lld`, `llvm-objcopy`, and `qemu-system-riscv32` tools.
+
+### How to Use
+
+Once the prerequisites are installed, you can build and run the operating system with a single script.
+
+1.  **Execute the `run.sh` script:**
+
+    ```bash
+    ./run.sh
+    ```
+
+    This script handles everything:
+    - Compiling the user-space shell.
+    - Compiling the kernel.
+    - Creating a `disk.tar` file system image from the contents of the `disk/` directory.
+    - Launching the OS in QEMU.
+
+2.  **Interact with the Shell:**
+
+    After running the script, QEMU will launch, and you will be greeted by the YuuOS shell prompt:
+
+    ```
+    >
+    ```
+
+    The following commands are available:
+
+    - `hello`: Prints a welcome message.
+    - `readfile`: Reads the content of `hello.txt` from the disk and prints it.
+    - `writefile`: Writes a predefined string to `hello.txt` on the disk.
+    - `exit`: Terminates the shell process.
 
 ## Project Structure
 

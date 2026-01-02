@@ -3,10 +3,10 @@ set -xue
 
 QEMU=qemu-system-riscv32
 
-OBJCOPY=/opt/homebrew/opt/llvm/bin/llvm-objcopy
+OBJCOPY=llvm-objcopy
 
 # Path to clang and compiler flags
-CC=/opt/homebrew/opt/llvm/bin/clang
+CC=clang
 CFLAGS="-std=c11 -O2 -g3 -Wall -Wextra --target=riscv32-unknown-elf -march=rv32im -mabi=ilp32 -fuse-ld=lld -fno-stack-protector -ffreestanding -nostdlib"
 
 # Build the shell (application)

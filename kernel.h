@@ -28,7 +28,8 @@
 #define PAGE_W          (1 << 2)    // Writable
 #define PAGE_X          (1 << 3)    // Executable
 #define PAGE_U          (1 << 4)    // User (accessible in user mod)
-#define SSTATUS_SPIE    (1 <<5 )
+#define SSTATUS_SPIE    (1 << 5) 
+#define SSTATUS_SUM     (1 << 18)
 
 #define SECTOR_SIZE                 512
 #define VIRTQ_ENTRY_NUM             16

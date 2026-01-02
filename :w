@@ -22,6 +22,8 @@ prompt:
 
         if (strcmp(cmdline, "hello") == 0)
             kprintf("hello my world!\n");
+        else if (strcmp(cmkline, "\n") ==0)
+            kprintf("\n");
         else if (strcmp(cmdline, "brapao") == 0)
             kprintf("achou o easter egg, falta só o do site\n");
         else 

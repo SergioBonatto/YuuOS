@@ -44,6 +44,7 @@ __attribute__((naked)) void user_entry(void) {
     );
 }
 
+
 void map_page(
         uint32_t    *table1,
         uint32_t    vaddr,
@@ -305,6 +306,11 @@ void *memset(void *buf, char c, size_t n) {
     return buf;
 }
 
+long getchar(void) {
+    struct sbiret ret = sbi_call(0, 0, 0, 0, 0, 0, 0, 2);
+    return ret.error;
+}
+
 void yield(void) {
     // search for a runnable process
     struct process *next = idle_proc;
@@ -344,6 +350,16 @@ void putchar(char ch){
 
 void handle_syscall(struct trap_frame *f){
     switch (f->a3){
+        case SYS_GETCHAR:
+            while (1){
+                long ch = getchar();
+                if (ch >= 0) {
+                    f->a0 = ch;
+                    break;
+                }
+                yield();
+            }
+            break;
         case SYS_PUTCHAR:
             putchar(f->a0);
             break;

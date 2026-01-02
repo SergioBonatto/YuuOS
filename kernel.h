@@ -92,10 +92,15 @@ struct virtio_virtq {
 
 // Virtio-blk request
 struct virtio_blk_req {
+    // First descriptor: read-only from the device
     uint32_t    type;
     uint32_t    reserved;
     uint64_t    sector;
+    
+    // Second descriptor: writable by the device if it's a read operation (VIRTQ_DESC_F_WRITE)
     uint8_t     data[512];
+
+    // Third descriptor: writable by the device (VIRTQ_DESC_F_WRITE)
     uint8_t     status;
 } __attribute__((packed));
 

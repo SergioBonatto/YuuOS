@@ -1,5 +1,5 @@
 #pragma once
-    
+
 typedef             int         kbool;
 typedef unsigned    char        uint8_t;
 typedef unsigned    short       uint16_t;
@@ -16,7 +16,7 @@ typedef             uint32_t    vaddr_t;
 #define SYS_PUTCHAR 1
 #define SYS_GETCHAR 2
 #define SYS_EXIT    3
-#define align_up(value, align)      __builtin_allignup(value, align)
+#define align_up(value, align)      __builtin_align_up(value, align)
 #define is_aligned(value, align)    __builtin_is_aligned(value, align)
 #define offsetof(type, member)      __builtin_offsetof(type, member)
 #define va_list                     __builtin_va_list

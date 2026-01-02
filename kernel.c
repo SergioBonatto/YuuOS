@@ -26,10 +26,10 @@ __attribute__((section(".text.boot")))
 __attribute__((naked))
 void boot(void) {
     __asm__ __volatile__(
-        "mv sp, %[stack_top]\n" 				// Set the stack pointer
-        "j kernel_main\n"       				// Jump to the kernel main function
+        "mv sp, %[stack_top]\n"                 // Set the stack pointer
+        "j kernel_main\n"       				 // Jump to the kernel main function
         :
-        : [stack_top] "r" (__stack_top) // Pass the stack top address as %[stack_top]
+        : [stack_top] "r" (__stack_top)        // Pass the stack top address as %[stack_top]
     );
 }
 
@@ -252,14 +252,14 @@ struct process *create_process(const void *image, size_t image_size){
         ) {
         paddr_t page = alloc_pages(1);
 
-        // handle the case where the data to be copied 
+        // handle the case where the data to be copied
         // is smaller than the page size
         size_t remaining = image_size - off;
         size_t copy_size = PAGE_SIZE <= remaining ? PAGE_SIZE : remaining;
 
         // fill and map the page
         kmemcpy((void *) page, image + off, copy_size);
-        map_page(page_table, USER_BASE + off, page, 
+        map_page(page_table, USER_BASE + off, page,
                 PAGE_U | PAGE_R | PAGE_W | PAGE_X);
     }
 
@@ -419,7 +419,15 @@ uint32_t virtio_reg_read32(unsigned offset){
     return *((volatile uint32_t *) (VIRTIO_BLK_PADDR + offset));
 }
 
+uint64_t virtio_reg_read64(unsigned offset){
+    return *((volatile uint64_t *) (VIRTIO_BLK_PADDR + offset));
+}
+
 void virtio_reg_write32(unsigned offset, uint32_t value){
+    *((volatile uint32_t *) (VIRTIO_BLK_PADDR + offset)) = value;
+}
+
+void virtio_reg_write64(unsigned offset, uint64_t value){
     *((volatile uint64_t *) (VIRTIO_BLK_PADDR + offset)) = value;
 }
 
@@ -429,8 +437,28 @@ void virtio_reg_fetch_and_or32(unsigned offset, uint32_t value){
 
 struct      virtio_virtq    *blk_request_vq;
 struct      virtio_blk_req  *blk_req;
-paddr_t     blk_req_padrr;
+paddr_t     blk_req_paddr;
 uint64_t    blk_capacity;
+
+struct virtio_virtq *virtq_init(unsigned index) {
+    // Allocate a region for the virtqueue
+    paddr_t virtq_paddr = alloc_pages(align_up(sizeof(struct virtio_virtq), PAGE_SIZE) / PAGE_SIZE);
+    struct virtio_virtq *vq = (struct virtio_virtq *) virtq_paddr;
+    vq->queue_index = index;
+    vq->used_index  = (volatile uint16_t *) &vq->used.index;
+
+    // select the queue: write the virtqueue index (first queue is 0)
+    virtio_reg_write32(VIRTIO_REG_QUEUE_SEL, index);
+
+    // specify the queue size: write the # of decription we'll use
+    virtio_reg_write32(VIRTIO_REG_QUEUE_NUM, VIRTQ_ENTRY_NUM);
+
+    // write the physical page from frame number (not physical address!) of the queue
+    virtio_reg_write32(VIRTIO_REG_QUEUE_PFN, virtq_paddr / PAGE_SIZE);
+
+    return vq;
+}
+
 
 void virtio_blk_init(void){
     if(virtio_reg_read32(VIRTIO_REG_MAGIC) != 0x74726976)
@@ -444,14 +472,93 @@ void virtio_blk_init(void){
     virtio_reg_write32(VIRTIO_REG_DEVICE_STATUS, 0);
 
     // 2. Set the ACKNOWLEDGE status bit: We found the device.
-        virtio_reg_fetch_and_or32(VIRTIO_REG_DEVICE_STATUS, VIRTIO_STATUS_ACK);
-    
-    // TODO: Continuar daqui
-    // FIX: Virtio device initialization
+    virtio_reg_fetch_and_or32(VIRTIO_REG_DEVICE_STATUS, VIRTIO_STATUS_ACK);
 
+    // 3. Set the DRIVER status bit: we know how to use the devices
+    virtio_reg_fetch_and_or32(VIRTIO_REG_DEVICE_STATUS, VIRTIO_STATUS_DRIVER);
 
+    // 4. set our page size: we use 4KB pages
+    // this defines PFN (page frame number) calculation
+    virtio_reg_write32(VIRTIO_REG_PAGE_SIZE, PAGE_SIZE);
+
+    // 5. Initialize a queue for disk read/write requests
+    blk_request_vq = virtq_init(0);
+
+    // 6. Set the DRIVER_OK status bit: we can now use the device!
+    virtio_reg_write32(VIRTIO_REG_DEVICE_STATUS, VIRTIO_STATUS_DRIVER_OK);
+
+    // get disk capacity
+    blk_capacity = virtio_reg_read64(VIRTIO_REG_DEVICE_CONFIG + 0) * SECTOR_SIZE;
+    kprintf("virtio-blk: capacity is %d bytes\n", (int)blk_capacity);
+
+    // Allocate a region to store requests to the device
+    blk_req_paddr   = alloc_pages(align_up(sizeof(*blk_req), PAGE_SIZE) / PAGE_SIZE );
+    blk_req         = (struct virtio_blk_req *) blk_req_paddr;
 }
 
+// Notifies the device that there is a new request
+// `desc_index` is the index of the head descriptor of the new request
+void virtq_kick(struct virtio_virtq *vq, int desc_index){
+    vq->avail.ring[vq->avail.index % VIRTQ_ENTRY_NUM] = desc_index;
+    vq->avail.index++;
+    __sync_synchronize();
+    virtio_reg_write32(VIRTIO_REG_QUEUE_NOTIFY, vq->queue_index);
+    vq->last_used_index++;
+}
+
+// return whether there are requests being processed by the device
+kbool virtq_is_busy(struct virtio_virtq *vq){
+    return vq->last_used_index != *vq->used_index;
+}
+
+// reads/writes from/to virtio-blk device
+void read_write_disk(void *buf, unsigned sector, int is_write){
+    if (sector >= blk_capacity / SECTOR_SIZE) {
+        kprintf("virtio: tried to read/write sector=%d, but capacity is %d\n",
+                sector, blk_capacity / SECTOR_SIZE);
+        return;
+    }
+
+    // construct the request according to the virtio-blk specification
+    blk_req->sector = sector;
+    blk_req->type   = is_write ? VIRTIO_BLK_T_OUT : VIRTIO_BLK_T_IN;
+    if (is_write)
+        kmemcpy(blk_req->data, buf, SECTOR_SIZE);
+
+    // construct the virtqueue descriptors (using 3 descriptors)
+    struct virtio_virtq *vq = blk_request_vq;
+    vq->descs[0].addr       = blk_req_paddr;
+    vq->descs[0].len        = sizeof(uint32_t) * 2 + sizeof(uint64_t);
+    vq->descs[0].flags      = VIRTQ_DESC_F_NEXT;
+    vq->descs[0].next       = 1;
+
+    vq->descs[1].addr       = blk_req_paddr + offsetof(struct virtio_blk_req, data);
+    vq->descs[1].len        = SECTOR_SIZE;
+    vq->descs[1].flags      = VIRTQ_DESC_F_NEXT | (is_write ? 0 : VIRTQ_DESC_F_WRITE);
+    vq->descs[1].next       = 2;
+
+    vq->descs[2].addr       = blk_req_paddr + offsetof(struct virtio_blk_req, status);
+    vq->descs[2].len        = sizeof(uint8_t);
+    vq->descs[2].flags      = VIRTQ_DESC_F_WRITE;
+
+    // notify the device that there is a new request
+    virtq_kick(vq, 0);
+
+    // wait until the device finishes processing
+    while (virtq_is_busy(vq))
+        ;
+
+    // virtio-blk: if a non-zero value is returned, it's an error
+    if (blk_req->status!=0){
+        kprintf("virtio: warn: failed to read/write sector=%d status=%d\n",
+                sector, blk_req->status);
+        return;
+    }
+
+    // for read operations, copy the data into the buffer
+    if(!is_write)
+        kmemcpy(buf, blk_req->data, SECTOR_SIZE);
+}
 
 void kernel_main(void) {
     kmemset(__bss, 0, (size_t) __bss_end - (size_t) __bss);
@@ -460,10 +567,22 @@ void kernel_main(void) {
 
     WRITE_CSR(stvec, (uint32_t) kernel_entry);
 
+    virtio_blk_init();
+
+    char buf[SECTOR_SIZE];
+    read_write_disk(buf, 0, false /* read from disk */);
+    kprintf("first sector: %s\n", buf);
+
+    strcpy(buf, "hello from kernel!!!\n");
+    read_write_disk(buf, 0, true /* write to the disk */);
+
+
+
+
     idle_proc = create_process(NULL, 0);
     idle_proc->pid = 0; //idle
     current_proc = idle_proc;
-    
+
     create_process(_binary_shell_bin_start, (size_t) _binary_shell_bin_size);
 
     yield();

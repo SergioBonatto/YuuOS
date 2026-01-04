@@ -2,6 +2,11 @@
 
 #pragma once
 
+extern char __bss[], __bss_end[], __stack_top[];
+extern char __free_ram[], __free_ram_end[];
+extern char __kernel_base[];
+extern char _binary_shell_bin_start[], _binary_shell_bin_size[];
+
 #define PANIC(fmt, ...) 																										    \
 	do { 																																			    \
 			printf("PANIC: %s:%d: " fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__); 	  \
@@ -10,7 +15,7 @@
 
 
 #define PROCS_MAX       8       // Maximum number of processes
-#define PROC_UNUSED     0       // Unised process control structure 
+#define PROC_UNUSED     0       // Unised process control structure
 #define PROC_RUNNABLE   1       // Runnable process
 #define PROC_EXITED     2
 #define SCAUSE_ECALL    8
@@ -18,7 +23,7 @@
 
 
 
-// The base virtual address of an application image. 
+// The base virtual address of an application image.
 // This needs to match the starting address defined in `user.ld`.
 #define USER_BASE       0x1000000
 
@@ -28,7 +33,7 @@
 #define PAGE_W          (1 << 2)    // Writable
 #define PAGE_X          (1 << 3)    // Executable
 #define PAGE_U          (1 << 4)    // User (accessible in user mod)
-#define SSTATUS_SPIE    (1 << 5) 
+#define SSTATUS_SPIE    (1 << 5)
 #define SSTATUS_SUM     (1 << 18)
 
 #define SECTOR_SIZE                 512
@@ -101,7 +106,7 @@ struct virtio_blk_req {
     uint32_t    type;
     uint32_t    reserved;
     uint64_t    sector;
-    
+
     // Second descriptor: writable by the device if it's a read operation (VIRTQ_DESC_F_WRITE)
     uint8_t     data[512];
 
@@ -174,7 +179,7 @@ struct tar_header {
     char devminor[8];
     char prefix[155];
     char padding[12];
-    char data[];        // array pointing to the data area following the header 
+    char data[];        // array pointing to the data area following the header
                         // (flexible array member)
 };
 

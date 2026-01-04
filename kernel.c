@@ -5,11 +5,6 @@ typedef unsigned char uint8_t;
 typedef unsigned int uint32_t;
 typedef uint32_t size_t;
 
-extern char __bss[], __bss_end[], __stack_top[];
-extern char __free_ram[], __free_ram_end[];
-extern char __kernel_base[];
-extern char _binary_shell_bin_start[], _binary_shell_bin_size[];
-
 paddr_t alloc_pages(uint32_t n){
     static paddr_t next_paddr = (paddr_t) __free_ram;
     paddr_t paddr = next_paddr;
@@ -199,74 +194,78 @@ struct process *proc_b;
 struct process *current_proc;
 struct process *idle_proc;
 
-struct process *create_process(const void *image, size_t image_size){
-    // find  an unused process control structure
-    struct process *proc = NULL;
-    int i;
-    for (i = 0; i < PROCS_MAX; i++){
+// find  an unused process control structure
+struct process *alloc_proc(int *pid_out){
+    for (int i = 0; i < PROCS_MAX; i++){
         if (procs[i].state == PROC_UNUSED) {
-            proc = &procs[i];
-            break;
+            *pid_out = i + 1;
+            return &procs[i];
         }
     }
+    return NULL;
+}
 
+// Stack callee-saved registers. These register values will be restored in
+// the first context switch in switch_context.
+uint32_t *setup_proc_stack(struct process *proc) {
+    uint32_t *sp = (uint32_t *)&proc->stack[sizeof(proc->stack)];
+    *--sp = 0;                         // s11
+    *--sp = 0;                         // s10
+    *--sp = 0;                         // s9
+    *--sp = 0;                         // s8
+    *--sp = 0;                         // s7
+    *--sp = 0;                         // s6
+    *--sp = 0;                         // s5
+    *--sp = 0;                         // s4
+    *--sp = 0;                         // s3
+    *--sp = 0;                         // s2
+    *--sp = 0;                         // s1
+    *--sp = 0;                         // s0
+    *--sp = (uint32_t) user_entry;  // ra
+
+    return sp;
+}
+
+// map user pages
+uint32_t *create_user_pagetable(const void *image, size_t image_size){
+    uint32_t *page_table = (uint32_t *)alloc_pages(1);
+
+    for (
+        paddr_t paddr = (paddr_t)__kernel_base;
+        paddr < (paddr_t)__free_ram_end;
+        paddr += PAGE_SIZE
+    ) {
+        map_page(page_table, paddr, paddr, PAGE_R | PAGE_W | PAGE_X);
+    }
+    map_page(page_table, VIRTIO_BLK_PADDR, VIRTIO_BLK_PADDR, PAGE_R | PAGE_W);
+
+    for (
+        uint32_t off = 0;
+        off < image_size;
+        off += PAGE_SIZE
+        ){
+            paddr_t page        = alloc_pages(1);
+            size_t remaining    = image_size - off;
+            size_t copy_size    = (PAGE_SIZE <= remaining) ? PAGE_SIZE : remaining;
+            memcpy((void *)page, image + off, copy_size);
+            map_page(page_table, USER_BASE + off, page, PAGE_U | PAGE_R | PAGE_W | PAGE_X);
+        }
+
+        return page_table;
+}
+
+
+struct process *create_process(const void *image, size_t image_size){
+    int pid;
+    struct process *proc = alloc_proc(&pid);
     if (!proc)
         PANIC("no free process slots");
 
-
-
-    // Stack callee-saved registers. These register values will be restored in
-    // the first context switch in switch_context.
-    uint32_t *sp = (uint32_t *) &proc->stack[sizeof(proc->stack)];
-    *--sp = 0;                      // s11
-    *--sp = 0;                      // s10
-    *--sp = 0;                      // s9
-    *--sp = 0;                      // s8
-    *--sp = 0;                      // s7
-    *--sp = 0;                      // s6
-    *--sp = 0;                      // s5
-    *--sp = 0;                      // s4
-    *--sp = 0;                      // s3
-    *--sp = 0;                      // s2
-    *--sp = 0;                      // s1
-    *--sp = 0;                      // s0
-    *--sp = (uint32_t) user_entry;  // ra
-
-    // Map kernel pages
-    uint32_t *page_table = (uint32_t *) alloc_pages(1);
-    for (
-            paddr_t paddr = (paddr_t) __kernel_base;
-                    paddr < (paddr_t) __free_ram_end;
-                    paddr += PAGE_SIZE
-        )
-        map_page(page_table, paddr, paddr, PAGE_R | PAGE_W | PAGE_X);
-
-    map_page(page_table, VIRTIO_BLK_PADDR, VIRTIO_BLK_PADDR, PAGE_R | PAGE_W);
-
-    // map user pages
-    for (
-            uint32_t off = 0;
-            off < image_size;
-            off += PAGE_SIZE
-        ) {
-        paddr_t page = alloc_pages(1);
-
-        // handle the case where the data to be copied
-        // is smaller than the page size
-        size_t remaining = image_size - off;
-        size_t copy_size = PAGE_SIZE <= remaining ? PAGE_SIZE : remaining;
-
-        // fill and map the page
-        memcpy((void *) page, image + off, copy_size);
-        map_page(page_table, USER_BASE + off, page,
-                PAGE_U | PAGE_R | PAGE_W | PAGE_X);
-    }
-
     // Initialize fields.
-    proc->pid           = i + 1;
+    proc->pid           = pid;
     proc->state         = PROC_RUNNABLE;
-    proc->sp            = (uint32_t) sp;
-    proc->page_table    = page_table;
+    proc->sp            = (uint32_t) setup_proc_stack(proc);
+    proc->page_table    = create_user_pagetable(image, image_size);
     return proc;
 
 }
@@ -673,9 +672,6 @@ void delay(void){
     for (int i = 0; i < 30000000; i++)
         __asm__ __volatile__("nop"); // do nothing
 }
-
-/* struct process *proc_a; */
-/* struct process *proc_b; */
 
 void proc_a_entry(void){
     printf("starting process A\n");

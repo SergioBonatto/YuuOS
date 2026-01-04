@@ -1,5 +1,5 @@
-#include "kernel.h"
-#include "common.h"
+#include "include/kernel.h"
+#include "include/common.h"
 
 typedef unsigned char uint8_t;
 typedef unsigned int uint32_t;
@@ -18,7 +18,7 @@ paddr_t alloc_pages(uint32_t n){
     if (next_paddr > (paddr_t) __free_ram_end)
         PANIC("out of memory");
 
-    kmemset((void *) paddr, 0, n * PAGE_SIZE);
+    memset((void *) paddr, 0, n * PAGE_SIZE);
     return paddr;
 }
 
@@ -257,7 +257,7 @@ struct process *create_process(const void *image, size_t image_size){
         size_t copy_size = PAGE_SIZE <= remaining ? PAGE_SIZE : remaining;
 
         // fill and map the page
-        kmemcpy((void *) page, image + off, copy_size);
+        memcpy((void *) page, image + off, copy_size);
         map_page(page_table, USER_BASE + off, page,
                 PAGE_U | PAGE_R | PAGE_W | PAGE_X);
     }
@@ -301,12 +301,12 @@ struct sbiret sbi_call(
 }
 
 
-void *memset(void *buf, char c, size_t n) {
-    uint8_t *p = (uint8_t *) buf;
-    while (n--)
-        *p++ = c;
-    return buf;
-}
+/* void *memset(void *buf, char c, size_t n) { */
+/*     uint8_t *p = (uint8_t *) buf; */
+/*     while (n--) */
+/*         *p++ = c; */
+/*     return buf; */
+/* } */
 
 long getchar(void) {
     struct sbiret ret = sbi_call(0, 0, 0, 0, 0, 0, 0, 2);
@@ -436,7 +436,7 @@ void virtio_blk_init(void){
 
     // get disk capacity
     blk_capacity = virtio_reg_read64(VIRTIO_REG_DEVICE_CONFIG + 0) * SECTOR_SIZE;
-    kprintf("virtio-blk: capacity is %d bytes\n", (int)blk_capacity);
+    printf("virtio-blk: capacity is %d bytes\n", (int)blk_capacity);
 
     // Allocate a region to store requests to the device
     blk_req_paddr   = alloc_pages(align_up(sizeof(*blk_req), PAGE_SIZE) / PAGE_SIZE );
@@ -461,7 +461,7 @@ kbool virtq_is_busy(struct virtio_virtq *vq){
 // reads/writes from/to virtio-blk device
 void read_write_disk(void *buf, unsigned sector, int is_write){
     if (sector >= blk_capacity / SECTOR_SIZE) {
-        kprintf("virtio: tried to read/write sector=%d, but capacity is %d\n",
+        printf("virtio: tried to read/write sector=%d, but capacity is %d\n",
                 sector, blk_capacity / SECTOR_SIZE);
         return;
     }
@@ -470,7 +470,7 @@ void read_write_disk(void *buf, unsigned sector, int is_write){
     blk_req->sector = sector;
     blk_req->type   = is_write ? VIRTIO_BLK_T_OUT : VIRTIO_BLK_T_IN;
     if (is_write)
-        kmemcpy(blk_req->data, buf, SECTOR_SIZE);
+        memcpy(blk_req->data, buf, SECTOR_SIZE);
 
     // construct the virtqueue descriptors (using 3 descriptors)
     struct virtio_virtq *vq = blk_request_vq;
@@ -497,14 +497,14 @@ void read_write_disk(void *buf, unsigned sector, int is_write){
 
     // virtio-blk: if a non-zero value is returned, it's an error
     if (blk_req->status!=0){
-        kprintf("virtio: warn: failed to read/write sector=%d status=%d\n",
+        printf("virtio: warn: failed to read/write sector=%d status=%d\n",
                 sector, blk_req->status);
         return;
     }
 
     // for read operations, copy the data into the buffer
     if(!is_write)
-        kmemcpy(buf, blk_req->data, SECTOR_SIZE);
+        memcpy(buf, blk_req->data, SECTOR_SIZE);
 }
 
 int oct2int(char *oct, int len){
@@ -535,9 +535,9 @@ void fs_init(void){
         struct file *file   = &files[i];
         file->in_use        = true;
         strcpy(file->name, header->name);
-        kmemcpy(file->data, header->data, filesz);
+        memcpy(file->data, header->data, filesz);
         file->size          = filesz;
-        kprintf("file: %s, size:%d\n", file->name, file->size);
+        printf("file: %s, size:%d\n", file->name, file->size);
 
         off += align_up(sizeof(struct tar_header) + filesz, SECTOR_SIZE);
     }
@@ -547,7 +547,7 @@ void fs_init(void){
 
 void fs_flush(void){
     // copy all file contents into "disk" buffer
-    kmemset(disk, 0, sizeof(disk));
+    memset(disk, 0, sizeof(disk));
     unsigned off = 0;
     for (int file_i = 0; file_i < FILES_MAX; file_i++){
         struct file *file = &files[file_i];
@@ -555,7 +555,7 @@ void fs_flush(void){
             continue;
 
         struct tar_header *header = (struct tar_header *) &disk[off];
-        kmemset(header, 0, sizeof(*header));
+        memset(header, 0, sizeof(*header));
         strcpy(header->name, file->name);
         strcpy(header->mode, "000644");
         strcpy(header->magic, "ustar");
@@ -579,14 +579,14 @@ void fs_flush(void){
             checksum /= 8;
         }
 
-        kmemcpy(header->data, file->data, file->size);
+        memcpy(header->data, file->data, file->size);
         off += align_up(sizeof(struct tar_header) + file->size, SECTOR_SIZE);
     }
 
     // write disk buffer into the virtio-blk
     for (unsigned sector = 0; sector < sizeof(disk) / SECTOR_SIZE; sector++)
         read_write_disk(&disk[sector * SECTOR_SIZE], sector, true);
-    kprintf("wrote %d bytes to disk \n", sizeof(disk));
+    printf("wrote %d bytes to disk \n", sizeof(disk));
 }
 
 
@@ -595,7 +595,7 @@ void fs_flush(void){
 void handle_syscall(struct trap_frame *f){
     switch (f->a3){
         case SYS_EXIT:
-            kprintf("process %d exited\n", current_proc->pid);
+            printf("process %d exited\n", current_proc->pid);
             current_proc->state = PROC_EXITED;
             yield();
             PANIC("unreachable");
@@ -619,18 +619,18 @@ void handle_syscall(struct trap_frame *f){
             int len                 = f->a2;
             struct file *file       = fs_lookup(filename);
             if (!file) {
-                kprintf("file not found: %s\n", filename);
+                printf("file not found: %s\n", filename);
                 f->a0 = -1;
                 break;
             }
             if (len > (int) sizeof(file->data))
                 len = file->size;
             if (f->a3 == SYS_WRITEFILE) {
-                kmemcpy(file->data, buf, len);
+                memcpy(file->data, buf, len);
                 file->size = len;
                 fs_flush();
             } else {
-                kmemcpy(buf, file->data, len);
+                memcpy(buf, file->data, len);
             }
             f->a0 = len;
             break;
@@ -663,7 +663,7 @@ void delay(void){
 /* struct process *proc_b; */
 
 void proc_a_entry(void){
-    kprintf("starting process A\n");
+    printf("starting process A\n");
     while(1){
         putchar('A');
         yield();
@@ -672,7 +672,7 @@ void proc_a_entry(void){
 
 
 void proc_b_entry(void){
-    kprintf("starting process B\n");
+    printf("starting process B\n");
     while(1){
         putchar('B');
         yield();
@@ -680,9 +680,9 @@ void proc_b_entry(void){
 }
 
 void kernel_main(void) {
-    kmemset(__bss, 0, (size_t) __bss_end - (size_t) __bss);
+    memset(__bss, 0, (size_t) __bss_end - (size_t) __bss);
 
-    kprintf("\n\n");
+    printf("\n\n");
 
     WRITE_CSR(stvec, (uint32_t) kernel_entry);
 
@@ -691,7 +691,7 @@ void kernel_main(void) {
 
     char buf[SECTOR_SIZE];
     read_write_disk(buf, 0, false /* read from disk */);
-    kprintf("first sector: %s\n", buf);
+    printf("first sector: %s\n", buf);
 
     strcpy(buf, "hello from kernel!!!\n");
     read_write_disk(buf, 0, true /* write to the disk */);

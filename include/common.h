@@ -27,8 +27,8 @@ typedef             uint32_t    vaddr_t;
 #define va_arg                      __builtin_va_arg
 
 
-void *kmemset(void *buf, char c, size_t n);
-void *kmemcpy(void *dst, const void *src, size_t n);
+void *memset(void *buf, char c, size_t n);
+void *memcpy(void *dst, const void *src, size_t n);
 char *strcpy(char *dst, const char *src);
-int strcmp(const char *s1, const char *s2);
-void kprintf(const char *fmt, ...);
+int 	strcmp(const char *s1, const char *s2);
+void 	printf(const char *fmt, ...);

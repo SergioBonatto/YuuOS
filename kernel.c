@@ -509,6 +509,7 @@ void handle_getchar(struct trap_frame *f){
         long ch = getchar();
         if (ch >= 0) {
             f->a0 = ch;
+            return;
         }
         yield();
     }
@@ -634,9 +635,6 @@ void fs_init(void){
         off += align_up(sizeof(struct tar_header) + filesz, SECTOR_SIZE);
     }
 }
-
-
-
 
 typedef void (*syscall_handler)(struct trap_frame *f);
 

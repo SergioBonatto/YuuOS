@@ -18,6 +18,7 @@ typedef             uint32_t    vaddr_t;
 #define SYS_EXIT        3
 #define SYS_READFILE    4
 #define SYS_WRITEFILE   5
+#define SYS_MAX         6
 #define align_up(value, align)      __builtin_align_up(value, align)
 #define is_aligned(value, align)    __builtin_is_aligned(value, align)
 #define offsetof(type, member)      __builtin_offsetof(type, member)

@@ -387,6 +387,162 @@ void virtio_reg_fetch_and_or32(unsigned offset, uint32_t value){
     virtio_reg_write32(offset, virtio_reg_read32(offset) | value);
 }
 
+// return whether there are requests being processed by the device
+kbool virtq_is_busy(struct virtio_virtq *vq){
+    return vq->last_used_index != *vq->used_index;
+}
+
+// Notifies the device that there is a new request
+// `desc_index` is the index of the head descriptor of the new request
+void virtq_kick(struct virtio_virtq *vq, int desc_index){
+    vq->avail.ring[vq->avail.index % VIRTQ_ENTRY_NUM] = desc_index;
+    vq->avail.index++;
+    __sync_synchronize();
+    virtio_reg_write32(VIRTIO_REG_QUEUE_NOTIFY, vq->queue_index);
+    vq->last_used_index++;
+}
+
+// reads/writes from/to virtio-blk device
+void read_write_disk(void *buf, unsigned sector, int is_write){
+    if (sector >= blk_capacity / SECTOR_SIZE) {
+        printf("virtio: tried to read/write sector=%d, but capacity is %d\n",
+                sector, blk_capacity / SECTOR_SIZE);
+        return;
+    }
+
+    // construct the request according to the virtio-blk specification
+    blk_req->sector = sector;
+    blk_req->type   = is_write ? VIRTIO_BLK_T_OUT : VIRTIO_BLK_T_IN;
+    if (is_write)
+        memcpy(blk_req->data, buf, SECTOR_SIZE);
+
+    // construct the virtqueue descriptors (using 3 descriptors)
+    struct virtio_virtq *vq = blk_request_vq;
+    vq->descs[0].addr       = blk_req_paddr;
+    vq->descs[0].len        = sizeof(uint32_t) * 2 + sizeof(uint64_t);
+    vq->descs[0].flags      = VIRTQ_DESC_F_NEXT;
+    vq->descs[0].next       = 1;
+
+    vq->descs[1].addr       = blk_req_paddr + offsetof(struct virtio_blk_req, data);
+    vq->descs[1].len        = SECTOR_SIZE;
+    vq->descs[1].flags      = VIRTQ_DESC_F_NEXT | (is_write ? 0 : VIRTQ_DESC_F_WRITE);
+    vq->descs[1].next       = 2;
+
+    vq->descs[2].addr       = blk_req_paddr + offsetof(struct virtio_blk_req, status);
+    vq->descs[2].len        = sizeof(uint8_t);
+    vq->descs[2].flags      = VIRTQ_DESC_F_WRITE;
+
+    // notify the device that there is a new request
+    virtq_kick(vq, 0);
+
+    // wait until the device finishes processing
+    while (virtq_is_busy(vq))
+        ;
+
+    // virtio-blk: if a non-zero value is returned, it's an error
+    if (blk_req->status!=0){
+        printf("virtio: warn: failed to read/write sector=%d status=%d\n",
+                sector, blk_req->status);
+        return;
+    }
+
+    // for read operations, copy the data into the buffer
+    if(!is_write)
+        memcpy(buf, blk_req->data, SECTOR_SIZE);
+}
+
+
+void fs_flush(void){
+    // copy all file contents into "disk" buffer
+    memset(disk, 0, sizeof(disk));
+    unsigned off = 0;
+    for (int file_i = 0; file_i < FILES_MAX; file_i++){
+        struct file *file = &files[file_i];
+        if (!file->in_use)
+            continue;
+
+        struct tar_header *header = (struct tar_header *) &disk[off];
+        memset(header, 0, sizeof(*header));
+        strcpy(header->name, file->name);
+        strcpy(header->mode, "000644");
+        strcpy(header->magic, "ustar");
+        strcpy(header->version, "00");
+        header->type = '0';
+
+        // turn the file size into an octal string
+        int filesz = file->size;
+        for (int i = sizeof(header->size); i > 0; i--){
+            header->size[i - 1] = (filesz % 8) + '0';
+            filesz /= 8;
+        }
+
+        // calculate the checksum
+        int checksum = ' ' * sizeof(header->checksum);
+        for (unsigned i = 0; i < sizeof(struct tar_header); i++)
+            checksum += (unsigned char) disk[off + 1];
+
+        for (int i = 5; i >= 0; i--){
+            header->checksum[i] = (checksum % 8) + '0';
+            checksum /= 8;
+        }
+
+        memcpy(header->data, file->data, file->size);
+        off += align_up(sizeof(struct tar_header) + file->size, SECTOR_SIZE);
+    }
+
+    // write disk buffer into the virtio-blk
+    for (unsigned sector = 0; sector < sizeof(disk) / SECTOR_SIZE; sector++)
+        read_write_disk(&disk[sector * SECTOR_SIZE], sector, true);
+    printf("wrote %d bytes to disk \n", sizeof(disk));
+}
+
+
+void handle_exit(struct trap_frame *f){
+    printf("process %d exited\n", current_proc->pid);
+    current_proc->state = PROC_EXITED;
+    yield();
+    PANIC("unreachable");
+};
+
+void handle_getchar(struct trap_frame *f){
+    while (1){
+        long ch = getchar();
+        if (ch >= 0) {
+            f->a0 = ch;
+        }
+        yield();
+    }
+}
+
+void handle_putchar(struct trap_frame *f){
+    putchar(f->a0);
+}
+
+void handle_readfile_writefile(struct trap_frame *f){
+    const char *filename    = (const char *) f->a0;
+    char *buf               = (char *) f->a1;
+    int len                 = f->a2;
+    struct file *file       = fs_lookup(filename);
+    if (!file) {
+        printf("file not found: %s\n", filename);
+        f->a0 = -1;
+    }
+    if (len > (int) sizeof(file->data))
+        len = file->size;
+    if (f->a3 == SYS_WRITEFILE) {
+        memcpy(file->data, buf, len);
+        file->size = len;
+        fs_flush();
+    } else {
+        memcpy(buf, file->data, len);
+    }
+    f->a0 = len;
+}
+
+void handle_error (struct trap_frame *f){
+    PANIC("unexpected suscall a3=%x\n", f->a3);
+}
+
 struct virtio_virtq *virtq_init(unsigned index) {
     // Allocate a region for the virtqueue
     paddr_t virtq_paddr = alloc_pages(align_up(sizeof(struct virtio_virtq), PAGE_SIZE) / PAGE_SIZE);
@@ -443,70 +599,6 @@ void virtio_blk_init(void){
     blk_req         = (struct virtio_blk_req *) blk_req_paddr;
 }
 
-// Notifies the device that there is a new request
-// `desc_index` is the index of the head descriptor of the new request
-void virtq_kick(struct virtio_virtq *vq, int desc_index){
-    vq->avail.ring[vq->avail.index % VIRTQ_ENTRY_NUM] = desc_index;
-    vq->avail.index++;
-    __sync_synchronize();
-    virtio_reg_write32(VIRTIO_REG_QUEUE_NOTIFY, vq->queue_index);
-    vq->last_used_index++;
-}
-
-// return whether there are requests being processed by the device
-kbool virtq_is_busy(struct virtio_virtq *vq){
-    return vq->last_used_index != *vq->used_index;
-}
-
-// reads/writes from/to virtio-blk device
-void read_write_disk(void *buf, unsigned sector, int is_write){
-    if (sector >= blk_capacity / SECTOR_SIZE) {
-        printf("virtio: tried to read/write sector=%d, but capacity is %d\n",
-                sector, blk_capacity / SECTOR_SIZE);
-        return;
-    }
-
-    // construct the request according to the virtio-blk specification
-    blk_req->sector = sector;
-    blk_req->type   = is_write ? VIRTIO_BLK_T_OUT : VIRTIO_BLK_T_IN;
-    if (is_write)
-        memcpy(blk_req->data, buf, SECTOR_SIZE);
-
-    // construct the virtqueue descriptors (using 3 descriptors)
-    struct virtio_virtq *vq = blk_request_vq;
-    vq->descs[0].addr       = blk_req_paddr;
-    vq->descs[0].len        = sizeof(uint32_t) * 2 + sizeof(uint64_t);
-    vq->descs[0].flags      = VIRTQ_DESC_F_NEXT;
-    vq->descs[0].next       = 1;
-
-    vq->descs[1].addr       = blk_req_paddr + offsetof(struct virtio_blk_req, data);
-    vq->descs[1].len        = SECTOR_SIZE;
-    vq->descs[1].flags      = VIRTQ_DESC_F_NEXT | (is_write ? 0 : VIRTQ_DESC_F_WRITE);
-    vq->descs[1].next       = 2;
-
-    vq->descs[2].addr       = blk_req_paddr + offsetof(struct virtio_blk_req, status);
-    vq->descs[2].len        = sizeof(uint8_t);
-    vq->descs[2].flags      = VIRTQ_DESC_F_WRITE;
-
-    // notify the device that there is a new request
-    virtq_kick(vq, 0);
-
-    // wait until the device finishes processing
-    while (virtq_is_busy(vq))
-        ;
-
-    // virtio-blk: if a non-zero value is returned, it's an error
-    if (blk_req->status!=0){
-        printf("virtio: warn: failed to read/write sector=%d status=%d\n",
-                sector, blk_req->status);
-        return;
-    }
-
-    // for read operations, copy the data into the buffer
-    if(!is_write)
-        memcpy(buf, blk_req->data, SECTOR_SIZE);
-}
-
 int oct2int(char *oct, int len){
     int dec = 0;
     for (int i = 0; i < len; i++){
@@ -545,98 +637,23 @@ void fs_init(void){
 
 
 
-void fs_flush(void){
-    // copy all file contents into "disk" buffer
-    memset(disk, 0, sizeof(disk));
-    unsigned off = 0;
-    for (int file_i = 0; file_i < FILES_MAX; file_i++){
-        struct file *file = &files[file_i];
-        if (!file->in_use)
-            continue;
 
-        struct tar_header *header = (struct tar_header *) &disk[off];
-        memset(header, 0, sizeof(*header));
-        strcpy(header->name, file->name);
-        strcpy(header->mode, "000644");
-        strcpy(header->magic, "ustar");
-        strcpy(header->version, "00");
-        header->type = '0';
+typedef void (*syscall_handler)(struct trap_frame *f);
 
-        // turn the file size into an octal string
-        int filesz = file->size;
-        for (int i = sizeof(header->size); i > 0; i--){
-            header->size[i - 1] = (filesz % 8) + '0';
-            filesz /= 8;
-        }
-
-        // calculate the checksum
-        int checksum = ' ' * sizeof(header->checksum);
-        for (unsigned i = 0; i < sizeof(struct tar_header); i++)
-            checksum += (unsigned char) disk[off + 1];
-
-        for (int i = 5; i >= 0; i--){
-            header->checksum[i] = (checksum % 8) + '0';
-            checksum /= 8;
-        }
-
-        memcpy(header->data, file->data, file->size);
-        off += align_up(sizeof(struct tar_header) + file->size, SECTOR_SIZE);
-    }
-
-    // write disk buffer into the virtio-blk
-    for (unsigned sector = 0; sector < sizeof(disk) / SECTOR_SIZE; sector++)
-        read_write_disk(&disk[sector * SECTOR_SIZE], sector, true);
-    printf("wrote %d bytes to disk \n", sizeof(disk));
-}
-
-
+static syscall_handler syscall_table[SYS_MAX] = {
+    [SYS_EXIT]      = handle_exit,
+    [SYS_GETCHAR]   = handle_getchar,
+    [SYS_PUTCHAR]   = handle_putchar,
+    [SYS_READFILE]  = handle_readfile_writefile,
+    [SYS_WRITEFILE] = handle_readfile_writefile,
+};
 
 
 void handle_syscall(struct trap_frame *f){
-    switch (f->a3){
-        case SYS_EXIT:
-            printf("process %d exited\n", current_proc->pid);
-            current_proc->state = PROC_EXITED;
-            yield();
-            PANIC("unreachable");
-        case SYS_GETCHAR:
-            while (1){
-                long ch = getchar();
-                if (ch >= 0) {
-                    f->a0 = ch;
-                    break;
-                }
-                yield();
-            }
-            break;
-        case SYS_PUTCHAR:
-            putchar(f->a0);
-            break;
-        case SYS_READFILE:
-        case SYS_WRITEFILE: {
-            const char *filename    = (const char *) f->a0;
-            char *buf               = (char *) f->a1;
-            int len                 = f->a2;
-            struct file *file       = fs_lookup(filename);
-            if (!file) {
-                printf("file not found: %s\n", filename);
-                f->a0 = -1;
-                break;
-            }
-            if (len > (int) sizeof(file->data))
-                len = file->size;
-            if (f->a3 == SYS_WRITEFILE) {
-                memcpy(file->data, buf, len);
-                file->size = len;
-                fs_flush();
-            } else {
-                memcpy(buf, file->data, len);
-            }
-            f->a0 = len;
-            break;
-        }
-        default:
-            PANIC("unexpected suscall a3=%x\n", f->a3);
+    if (f->a3 < SYS_MAX && syscall_table[f->a3]){
+        syscall_table[f->a3](f);
+    } else {
+        PANIC("unexpected syscall a3=%x\n", f->a3);
     }
 }
 

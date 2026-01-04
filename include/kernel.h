@@ -93,7 +93,7 @@ struct virtio_virtq {
     int                 queue_index;
     volatile uint16_t   *used_index;
     uint16_t            last_used_index;
-} __attribute((packed));
+};
 
 // Virtio-blk request
 struct virtio_blk_req {
@@ -154,7 +154,7 @@ struct trap_frame {
     uint32_t s10;
     uint32_t s11;
     uint32_t sp;
-} __attribute__((packed));
+};
 
 struct tar_header {
     char name[100];
@@ -176,7 +176,7 @@ struct tar_header {
     char padding[12];
     char data[];        // array pointing to the data area following the header 
                         // (flexible array member)
-}__attribute((packed));
+};
 
 struct file {
     kbool   in_use;     // indicates if this file entry in use

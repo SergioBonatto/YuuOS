@@ -1,8 +1,8 @@
-#include "include/kernel.h"
-#include "include/common.h"
-#include "include/process.h"
-#include "include/context.h"
-#include "include/memory.h"
+#include "kernel.h"
+#include "common.h"
+#include "process.h"
+#include "context.h"
+#include "memory.h"
 
 
 

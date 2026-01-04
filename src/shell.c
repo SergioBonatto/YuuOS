@@ -1,4 +1,4 @@
-#include "include/user.h"
+#include "user.h"
 
 int main(void){
     while (1){
@@ -33,7 +33,7 @@ prompt:
             printf("%s\n", buf);
         } else if (strcmp(cmdline, "writefile") == 0)
             writefile("hello.txt", "hello from shell!\n", 19);
-        else 
+        else
             printf("unknow command: %\n", cmdline);
     }
 }

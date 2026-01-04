@@ -1,6 +1,6 @@
-#include "include/kernel.h"
-#include "include/common.h"
-#include "include/memory.h"
+#include "kernel.h"
+#include "common.h"
+#include "memory.h"
 
 paddr_t alloc_pages(uint32_t n){
     static paddr_t next_paddr = (paddr_t) __free_ram;

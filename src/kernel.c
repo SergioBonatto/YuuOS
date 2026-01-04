@@ -4,8 +4,6 @@
 #include "process.h"
 #include "context.h"
 
-
-
 __attribute__((section(".text.boot")))
 __attribute__((naked))
 void boot(void) {
@@ -22,7 +20,6 @@ struct process *proc_a;
 struct process *proc_b;
 struct process *current_proc;
 struct process *idle_proc;
-
 
 struct sbiret sbi_call(
 		long arg0,
@@ -52,7 +49,6 @@ struct sbiret sbi_call(
 	return (struct sbiret){.error = a0, .value = a1};
 }
 
-
 /* void *memset(void *buf, char c, size_t n) { */
 /*     uint8_t *p = (uint8_t *) buf; */
 /*     while (n--) */
@@ -64,39 +60,6 @@ long getchar(void) {
     struct sbiret ret = sbi_call(0, 0, 0, 0, 0, 0, 0, 2);
     return ret.error;
 }
-
-// void yield(void) {
-//     // search for a runnable process
-//     struct process *next = idle_proc;
-//     for (int i = 0; i < PROCS_MAX; i++) {
-//         struct process *proc = &procs[(current_proc->pid + i) % PROCS_MAX];
-//         if (proc->state == PROC_RUNNABLE && proc->pid > 0){
-//             next = proc;
-//             break;
-//         }
-//     }
-
-//     // if there's no runnable process other than the current one
-//     // return and continue processing
-//     if (next == current_proc)
-//         return;
-
-//     __asm__ __volatile__(
-//         "sfence.vma\n"
-//         "csrw satp, %[satp]\n"
-//         "sfence.vma\n"
-//         "csrw sscratch, %[sscratch]\n"
-//         :
-//         :   [satp] "r" (SATP_SV32 | ((uint32_t) next->page_table / PAGE_SIZE)),
-//             [sscratch] "r" ((uint32_t) &next->stack[sizeof(next->stack)])
-//     );
-
-
-//     // context switch
-//     struct process *prev = current_proc;
-//     current_proc = next;
-//     switch_context(&prev->sp, &next->sp);
-// }
 
 struct file files[FILES_MAX];
 uint8_t disk[DISK_MAX_SIZE];

@@ -1,10 +1,10 @@
 #include "include/kernel.h"
 #include "include/common.h"
-#include "memory.c"
+#include "include/memory.h"
+#include "include/process.h"
+#include "include/context.h"
 
-typedef unsigned char uint8_t;
-typedef unsigned int uint32_t;
-typedef uint32_t size_t;
+
 
 __attribute__((section(".text.boot")))
 __attribute__((naked))
@@ -17,194 +17,12 @@ void boot(void) {
     );
 }
 
-__attribute__((naked)) void user_entry(void) {
-    __asm__ __volatile__(
-        "csrw sepc,     %[sepc]     \n"
-        "csrw sstatus,  %[sstatus]  \n"
-        "sret                       \n"
-        :
-        :   [sepc] "r" (USER_BASE),
-            [sstatus] "r" (SSTATUS_SPIE | SSTATUS_SUM)
-    );
-}
-
-__attribute__((naked))
-__attribute__((aligned(4)))
-void kernel_entry(void) {
-    __asm__ __volatile__(
-
-        // Retrieve the kernel stack of the running process from sscratch.
-        "csrrw sp, sscratch, sp\n"
-
-        "addi sp, sp, -4 * 31\n"
-        "sw ra,  4 * 0(sp)\n"
-        "sw gp,  4 * 1(sp)\n"
-        "sw tp,  4 * 2(sp)\n"
-        "sw t0,  4 * 3(sp)\n"
-        "sw t1,  4 * 4(sp)\n"
-        "sw t2,  4 * 5(sp)\n"
-        "sw t3,  4 * 6(sp)\n"
-        "sw t4,  4 * 7(sp)\n"
-        "sw t5,  4 * 8(sp)\n"
-        "sw t6,  4 * 9(sp)\n"
-        "sw a0,  4 * 10(sp)\n"
-        "sw a1,  4 * 11(sp)\n"
-        "sw a2,  4 * 12(sp)\n"
-        "sw a3,  4 * 13(sp)\n"
-        "sw a4,  4 * 14(sp)\n"
-        "sw a5,  4 * 15(sp)\n"
-        "sw a6,  4 * 16(sp)\n"
-        "sw a7,  4 * 17(sp)\n"
-        "sw s0,  4 * 18(sp)\n"
-        "sw s1,  4 * 19(sp)\n"
-        "sw s2,  4 * 20(sp)\n"
-        "sw s3,  4 * 21(sp)\n"
-        "sw s4,  4 * 22(sp)\n"
-        "sw s5,  4 * 23(sp)\n"
-        "sw s6,  4 * 24(sp)\n"
-        "sw s7,  4 * 25(sp)\n"
-        "sw s8,  4 * 26(sp)\n"
-        "sw s9,  4 * 27(sp)\n"
-        "sw s10, 4 * 28(sp)\n"
-        "sw s11, 4 * 29(sp)\n"
-
-        // Retrieve and save the sp at the time of exception.
-        "csrr a0, sscratch\n"
-        "sw a0, 4 * 30(sp)\n"
-
-        // reset the kernel stack.
-        "addi a0, sp, 4 * 31\n"
-        "csrw sscratch, a0\n"
-
-        "mv a0, sp\n"
-        "call handle_trap\n"
-
-        "lw ra,  4 * 0(sp)\n"
-        "lw gp,  4 * 1(sp)\n"
-        "lw tp,  4 * 2(sp)\n"
-        "lw t0,  4 * 3(sp)\n"
-        "lw t1,  4 * 4(sp)\n"
-        "lw t2,  4 * 5(sp)\n"
-        "lw t3,  4 * 6(sp)\n"
-        "lw t4,  4 * 7(sp)\n"
-        "lw t5,  4 * 8(sp)\n"
-        "lw t6,  4 * 9(sp)\n"
-        "lw a0,  4 * 10(sp)\n"
-        "lw a1,  4 * 11(sp)\n"
-        "lw a2,  4 * 12(sp)\n"
-        "lw a3,  4 * 13(sp)\n"
-        "lw a4,  4 * 14(sp)\n"
-        "lw a5,  4 * 15(sp)\n"
-        "lw a6,  4 * 16(sp)\n"
-        "lw a7,  4 * 17(sp)\n"
-        "lw s0,  4 * 18(sp)\n"
-        "lw s1,  4 * 19(sp)\n"
-        "lw s2,  4 * 20(sp)\n"
-        "lw s3,  4 * 21(sp)\n"
-        "lw s4,  4 * 22(sp)\n"
-        "lw s5,  4 * 23(sp)\n"
-        "lw s6,  4 * 24(sp)\n"
-        "lw s7,  4 * 25(sp)\n"
-        "lw s8,  4 * 26(sp)\n"
-        "lw s9,  4 * 27(sp)\n"
-        "lw s10, 4 * 28(sp)\n"
-        "lw s11, 4 * 29(sp)\n"
-        "lw sp,  4 * 30(sp)\n"
-        "sret\n"
-    );
-}
-
-__attribute__((naked))
-void switch_context(uint32_t *prev_sp, uint32_t *next_sp) {
-    __asm__ __volatile__(
-        "addi sp, sp, -13 * 4\n"
-        "sw ra,  0  * 4(sp)\n"
-        "sw s0,  1  * 4(sp)\n"
-        "sw s1,  2  * 4(sp)\n"
-        "sw s2,  3  * 4(sp)\n"
-        "sw s3,  4  * 4(sp)\n"
-        "sw s4,  5  * 4(sp)\n"
-        "sw s5,  6  * 4(sp)\n"
-        "sw s6,  7  * 4(sp)\n"
-        "sw s7,  8  * 4(sp)\n"
-        "sw s8,  9  * 4(sp)\n"
-        "sw s9,  10 * 4(sp)\n"
-        "sw s10, 11 * 4(sp)\n"
-        "sw s11, 12 * 4(sp)\n"
-
-        "sw sp, (a0)\n"
-        "lw sp, (a1)\n"
-        "lw ra,  0  * 4(sp)\n"
-        "lw s0,  1  * 4(sp)\n"
-        "lw s1,  2  * 4(sp)\n"
-        "lw s2,  3  * 4(sp)\n"
-        "lw s3,  4  * 4(sp)\n"
-        "lw s4,  5  * 4(sp)\n"
-        "lw s5,  6  * 4(sp)\n"
-        "lw s6,  7  * 4(sp)\n"
-        "lw s7,  8  * 4(sp)\n"
-        "lw s8,  9  * 4(sp)\n"
-        "lw s9,  10 * 4(sp)\n"
-        "lw s10, 11 * 4(sp)\n"
-        "lw s11, 12 * 4(sp)\n"
-        "addi sp, sp, 13 * 4\n"
-        "ret\n"
-    );
-}
-
 struct process procs[PROCS_MAX]; // ALL process control structures.
 struct process *proc_a;
 struct process *proc_b;
 struct process *current_proc;
 struct process *idle_proc;
 
-// find  an unused process control structure
-struct process *alloc_proc(int *pid_out){
-    for (int i = 0; i < PROCS_MAX; i++){
-        if (procs[i].state == PROC_UNUSED) {
-            *pid_out = i + 1;
-            return &procs[i];
-        }
-    }
-    return NULL;
-}
-
-// Stack callee-saved registers. These register values will be restored in
-// the first context switch in switch_context.
-uint32_t *setup_proc_stack(struct process *proc) {
-    uint32_t *sp = (uint32_t *)&proc->stack[sizeof(proc->stack)];
-    *--sp = 0;                         // s11
-    *--sp = 0;                         // s10
-    *--sp = 0;                         // s9
-    *--sp = 0;                         // s8
-    *--sp = 0;                         // s7
-    *--sp = 0;                         // s6
-    *--sp = 0;                         // s5
-    *--sp = 0;                         // s4
-    *--sp = 0;                         // s3
-    *--sp = 0;                         // s2
-    *--sp = 0;                         // s1
-    *--sp = 0;                         // s0
-    *--sp = (uint32_t) user_entry;  // ra
-
-    return sp;
-}
-
-
-struct process *create_process(const void *image, size_t image_size){
-    int pid;
-    struct process *proc = alloc_proc(&pid);
-    if (!proc)
-        PANIC("no free process slots");
-
-    // Initialize fields.
-    proc->pid           = pid;
-    proc->state         = PROC_RUNNABLE;
-    proc->sp            = (uint32_t) setup_proc_stack(proc);
-    proc->page_table    = create_user_pagetable(image, image_size);
-    return proc;
-
-}
 
 struct sbiret sbi_call(
 		long arg0,
@@ -247,38 +65,38 @@ long getchar(void) {
     return ret.error;
 }
 
-void yield(void) {
-    // search for a runnable process
-    struct process *next = idle_proc;
-    for (int i = 0; i < PROCS_MAX; i++) {
-        struct process *proc = &procs[(current_proc->pid + i) % PROCS_MAX];
-        if (proc->state == PROC_RUNNABLE && proc->pid > 0){
-            next = proc;
-            break;
-        }
-    }
+// void yield(void) {
+//     // search for a runnable process
+//     struct process *next = idle_proc;
+//     for (int i = 0; i < PROCS_MAX; i++) {
+//         struct process *proc = &procs[(current_proc->pid + i) % PROCS_MAX];
+//         if (proc->state == PROC_RUNNABLE && proc->pid > 0){
+//             next = proc;
+//             break;
+//         }
+//     }
 
-    // if there's no runnable process other than the current one
-    // return and continue processing
-    if (next == current_proc)
-        return;
+//     // if there's no runnable process other than the current one
+//     // return and continue processing
+//     if (next == current_proc)
+//         return;
 
-    __asm__ __volatile__(
-        "sfence.vma\n"
-        "csrw satp, %[satp]\n"
-        "sfence.vma\n"
-        "csrw sscratch, %[sscratch]\n"
-        :
-        :   [satp] "r" (SATP_SV32 | ((uint32_t) next->page_table / PAGE_SIZE)),
-            [sscratch] "r" ((uint32_t) &next->stack[sizeof(next->stack)])
-    );
+//     __asm__ __volatile__(
+//         "sfence.vma\n"
+//         "csrw satp, %[satp]\n"
+//         "sfence.vma\n"
+//         "csrw sscratch, %[sscratch]\n"
+//         :
+//         :   [satp] "r" (SATP_SV32 | ((uint32_t) next->page_table / PAGE_SIZE)),
+//             [sscratch] "r" ((uint32_t) &next->stack[sizeof(next->stack)])
+//     );
 
 
-    // context switch
-    struct process *prev = current_proc;
-    current_proc = next;
-    switch_context(&prev->sp, &next->sp);
-}
+//     // context switch
+//     struct process *prev = current_proc;
+//     current_proc = next;
+//     switch_context(&prev->sp, &next->sp);
+// }
 
 struct file files[FILES_MAX];
 uint8_t disk[DISK_MAX_SIZE];

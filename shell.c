@@ -1,18 +1,18 @@
-#include "user.h"
+#include "include/user.h"
 
-void main(void){
+int main(void){
     while (1){
 prompt:
-        kprintf("> ");
+        printf("> ");
         char cmdline[128];
         for (int i = 0;; i++){
             char ch = getchar();
             putchar(ch);
             if (i == sizeof(cmdline) - 1){
-                kprintf("command line too long\n");
+                printf("command line too long\n");
                 goto prompt;
             } else if (ch == '\r') {
-                kprintf("\n");
+                printf("\n");
                 cmdline[i] = '\0';
                 break;
             } else {
@@ -21,19 +21,19 @@ prompt:
         }
 
         if (strcmp(cmdline, "hello") == 0)
-            kprintf("hello my world!\n");
+            printf("hello my world!\n");
         else if (strcmp(cmdline, "brapao") == 0)
-            kprintf("achou o easter egg, falta só o do site\n");
+            printf("achou o easter egg, falta só o do site\n");
         else if (strcmp(cmdline, "exit") ==0)
             exit();
         else if (strcmp(cmdline, "readfile") == 0){
             char buf[128];
             int len = readfile("hello.txt", buf, sizeof(buf));
             buf[len] = '\0';
-            kprintf("%s\n", buf);
+            printf("%s\n", buf);
         } else if (strcmp(cmdline, "writefile") == 0)
             writefile("hello.txt", "hello from shell!\n", 19);
         else 
-            kprintf("unknow command: %\n", cmdline);
+            printf("unknow command: %\n", cmdline);
     }
 }

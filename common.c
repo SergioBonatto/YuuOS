@@ -1,8 +1,8 @@
-#include "common.h"
+#include "include/common.h"
 
 void putchar(char ch);
 
-void kprintf(const char *fmt, ...){
+void printf(const char *fmt, ...){
     va_list vargs;
     va_start(vargs, fmt);
 
@@ -62,7 +62,7 @@ void kprintf(const char *fmt, ...){
 }
 
 
-void *kmemcpy(void *dst, const void *src, size_t n) {
+void *memcpy(void *dst, const void *src, size_t n) {
     uint8_t         *d = (uint8_t *) dst;
     const uint8_t   *s = (const uint8_t *) src;
     while (n--)
@@ -70,7 +70,7 @@ void *kmemcpy(void *dst, const void *src, size_t n) {
     return dst;
 }
 
-void *kmemset(void *buf, char c, size_t n){
+void *memset(void *buf, char c, size_t n){
     uint8_t *p = (uint8_t *) buf;
     while (n--)
         *p++ = c;

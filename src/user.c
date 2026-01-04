@@ -1,4 +1,4 @@
-#include "include/user.h"
+#include "user.h"
 
 extern char __stack_top[];
 
@@ -48,4 +48,3 @@ int readfile(const char *filename, char *buf, int len){
 int writefile(const char *filename, const char *buf, int len) {
     return syscall(SYS_WRITEFILE, (int) filename, (int) buf, len);
 }
-

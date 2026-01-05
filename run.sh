@@ -15,7 +15,7 @@ $OBJCOPY --set-section-flags .bss=alloc,contents -O binary build/shell.elf build
 
 # Build kernel
 $CC $CFLAGS -Wl,-Tsrc/kernel.ld -Wl,-Map=build/kernel.map -o build/kernel.elf \
-      src/kernel.c src/common.c src/context.c src/process.c src/memory.c build/shell.bin.o
+      src/kernel.c src/common.c src/context.c src/process.c src/memory.c src/sbi.c build/shell.bin.o
 
 # Run QEMU
 $QEMU -machine virt -bios default -nographic -serial mon:stdio --no-reboot  \

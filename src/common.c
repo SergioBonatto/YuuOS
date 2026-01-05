@@ -1,6 +1,5 @@
 #include "common.h"
-
-void putchar(char ch);
+#include "user.h"
 
 void printf(const char *fmt, ...){
     va_list vargs;

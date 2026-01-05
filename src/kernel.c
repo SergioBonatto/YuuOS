@@ -3,6 +3,7 @@
 #include "memory.h"
 #include "process.h"
 #include "context.h"
+#include "sbi.h"
 
 __attribute__((section(".text.boot")))
 __attribute__((naked))
@@ -56,17 +57,10 @@ struct sbiret sbi_call(
 /*     return buf; */
 /* } */
 
-long getchar(void) {
-    struct sbiret ret = sbi_call(0, 0, 0, 0, 0, 0, 0, 2);
-    return ret.error;
-}
+
 
 struct file files[FILES_MAX];
 uint8_t disk[DISK_MAX_SIZE];
-
-void putchar(char ch){
-	sbi_call(ch, 0, 0, 0, 0, 0, 0, 1 /* console putchar */);
-}
 
 struct file *fs_lookup(const char *filename){
     for (int i = 0; i < FILES_MAX; i++){

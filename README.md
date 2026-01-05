@@ -2,25 +2,70 @@
 
 YuuOS is a minimalist, monolithic operating system kernel designed for the RISC-V 32-bit architecture. This is a study project implementing concepts from [operating-system-in-1000-lines](https://operating-system-in-1000-lines.vercel.app/ja/).
 
-## Features
+## Architectural Deep Dive
 
-- **Monolithic Kernel:** A simple, all-in-one kernel structure.
-- **RISC-V 32-bit Support:** Specifically designed for the `rv32im` architecture.
-- **Pre-emptive Multitasking:** Fixed context switching between up to 8 processes with timer-based preemption.
-- **Virtual Memory:** Two-level hierarchical page table with Sv32 MMU support (simplified, not full demand paging).
-- **System Calls:** Implements 5 basic syscalls (`SYS_PUTCHAR`, `SYS_GETCHAR`, `SYS_EXIT`, `SYS_READFILE`, `SYS_WRITEFILE`).
-- **VirtIO Block Device Driver:** Minimal virtio-blk driver for block device I/O.
-- **Simplified Filesystem:** TAR USTAR format embedded in disk image at boot; not a dynamic filesystem implementation.
-- **User-space Shell:** Basic interactive shell with hardcoded commands (`hello`, `readfile`, `writefile`, `exit`).
+YuuOS is built on a classic monolithic kernel model. While minimalist, it implements several core operating system concepts to support a functional, albeit simple, user-space environment.
 
-## Components
+### Memory Management
 
-- `kernel.c`, `kernel.h`: Core kernel code with process management, memory management (page tables), syscall dispatch, timer interrupt handling, and virtio-blk driver.
-- `common.c`, `common.h`: Shared utility functions (`kmemcpy`, `kmemset`, `strcmp`, `kprintf`) used by both kernel and user-space.
-- `user.c`, `user.h`: User-space library providing syscall wrappers and process entry point.
-- `shell.c`: Simple shell application demonstrating user-space execution and file I/O.
-- `kernel.ld`, `user.ld`: Linker scripts defining memory layout (kernel at 0x80200000, user processes at 0x1000000).
-- `run.sh`: Build script handling compilation, binary conversion, TAR disk image creation, and QEMU invocation.
+The kernel uses the RISC-V Sv32 virtual memory scheme, which implements a two-level page table structure. The address space is partitioned between the kernel and a single user process.
+
+-   **Address Space Layout:**
+    -   **Kernel Space:** Loaded at the physical and virtual address `0x80200000`. The kernel's code, data, and a 64MB region for dynamic page allocation (`__free_ram`) are mapped with a 1:1 virtual-to-physical correspondence. This direct mapping simplifies the kernel's memory management logic.
+    -   **User Space:** Each process is given a distinct address space starting at the virtual address `0x1000000`. This is defined in the `user.ld` linker script.
+
+-   **Page Tables:**
+    -   Each process has its own root page table (Level 1). Upon a context switch, the `satp` (Supervisor Address Translation and Protection) register is updated to point to the next process's root page table, effectively activating its address space.
+    -   The `create_user_pagetable` function allocates a new page table for a process. It crucially maps the entire kernel space into the user process's address space, allowing the CPU to access kernel code and data when a trap occurs. It then maps the application's binary image and allocates pages for its stack.
+
+-   **Physical Allocation:**
+    -   Physical pages are allocated using `alloc_pages`, a simple bump allocator that carves out 4KB chunks from the `__free_ram` region. There is no corresponding deallocation mechanism, reflecting the system's simple lifecycle.
+
+### Process Management and Scheduling
+
+YuuOS implements cooperative multitasking for a fixed number of processes (`PROCS_MAX`).
+
+-   **Process Control Block:** The state of each process is maintained in a `struct process`, which contains its ID, state (`PROC_RUNNABLE`, `PROC_EXITED`, etc.), a pointer to its kernel stack, and a pointer to its root page table.
+
+-   **Scheduling:**
+    -   The scheduler is implemented in the `yield()` function and follows a basic round-robin policy. It iterates through the global `procs` array to find the next `PROC_RUNNABLE` process to execute.
+    -   There is a designated `idle_proc` that runs when no other processes are runnable.
+
+-   **Context Switching:**
+    -   The `switch_context` function, written in assembly, performs the low-level machine state switch. It saves callee-saved registers to the current process's kernel stack and restores them for the next process.
+    -   Upon a trap from user-space, the `sscratch` register is used to swap the user stack pointer with the process's kernel stack pointer, ensuring a safe and isolated execution environment for the trap handler.
+
+### System Calls and Trap Handling
+
+System calls provide the interface between user-space applications and kernel services.
+
+-   **Trap Entry:** The `stvec` register is configured to point to `kernel_entry`, the unified assembly routine for handling all traps (interrupts, exceptions, and syscalls).
+-   **Trap Handling:**
+    1.  `kernel_entry` saves the complete user register context onto the process's kernel stack, creating a `struct trap_frame`.
+    2.  It then calls `handle_trap`, a C function that reads the `scause` register to determine the cause of the trap.
+    3.  For syscalls (`scause` = 8), `handle_trap` dispatches to `handle_syscall`.
+-   **Syscall Dispatch:** `handle_syscall` uses the value in register `a3` as an index into `syscall_table`, an array of function pointers, to invoke the correct handler (e.g., `handle_putchar`, `handle_readfile`). Arguments are passed from user space in registers `a0-a2`.
+
+### VirtIO Block Device Driver
+
+A key feature of YuuOS is its driver for the VirtIO block device, the standard para-virtualized I/O mechanism in QEMU.
+
+-   **Initialization:** The `virtio_blk_init` function performs the standard VirtIO device initialization sequence, negotiating with the device and setting up the required virtqueue.
+-   **Virtqueues:** Communication is managed via a single virtqueue, which consists of three main components:
+    1.  **Descriptor Table:** An array of `struct virtq_desc` that describes the memory buffers (address, length, flags) the driver wants to share with the device.
+    2.  **Available Ring:** The driver places the index of a descriptor chain into this ring to notify the device of a new request.
+    3.  **Used Ring:** The device places the index of a completed descriptor chain here to signal completion to the driver.
+-   **I/O Operations:**
+    -   To perform a read or write, the driver constructs a `struct virtio_blk_req` header and assembles a three-descriptor chain: one for the request header, one for the data buffer, and one for the device to write a status byte.
+    -   The driver "kicks" the device by writing to the `VIRTIO_REG_QUEUE_NOTIFY` register. It then busy-waits by polling the `used_index` of the virtqueue to detect when the operation has finished.
+
+### In-Memory TAR Filesystem
+
+The filesystem is not a traditional on-disk structure but rather an in-memory cache of files loaded from a TAR archive at boot.
+
+-   **Initialization:** At startup, `fs_init` reads the first few sectors from the VirtIO block device. It parses this data as a USTAR-formatted TAR archive, extracting each file's name and content into the in-memory `files` array.
+-   **File Operations:** The `readfile` and `writefile` syscalls operate directly on the data buffers in this array.
+-   **Persistence:** When `writefile` is called, the `fs_flush` function is triggered. It reconstructs the entire TAR archive in a memory buffer from the current state of the `files` array and writes it back to the block device. This makes changes persistent for the duration of the QEMU session but is highly inefficient.
 
 ## Getting Started
 
@@ -92,75 +137,3 @@ Once the prerequisites are installed, you can build and run the operating system
     - `exit`: Terminates the shell and stops the OS.
 
     To exit QEMU, press `Ctrl+A` followed by `X`.
-
-## Project Structure
-
-```
-.
-├── common.c
-├── common.h
-├── disk/
-│   ├── hello.txt
-│   └── meow.txt
-├── kernel.c
-├── kernel.h
-├── kernel.ld
-├── lorem.txt
-├── run.sh
-├── shell.c
-├── user.c
-├── user.h
-└── user.ld
-```
-
-- **`kernel.*`**: Files related to the kernel itself.
-- **`user.*`**: Files related to user-space applications.
-- **`shell.c`**: The user-space shell application.
-- **`common.*`**: Common code shared between the kernel and user-space.
-- **`disk/`**: Contains files that will be included in the initial disk image (embedded as TAR USTAR format).
-- **`run.sh`**: The main script to build and run the OS.
-
-## Technical Details
-
-### Memory Layout
-
-- **Kernel Space:** 0x80200000 - 0x804FFFFF (3MB kernel image + 64MB free RAM for page allocation)
-- **User Space:** 0x1000000 - 0x17FFFFF (per-process, 8MB reserved)
-- **Process Stack:** 8KB per process (grows downward)
-- **Physical Pages:** 4KB page size; 2-level hierarchical page tables (Sv32)
-
-### Process Management
-
-- **Max Processes:** 8 (PROCS_MAX)
-- **Scheduling:** Timer-driven context switching at fixed intervals; processes run in predefined order.
-- **Context Switch:** Assembly routine saves/restores all registers via process stack.
-
-### System Calls
-
-Syscalls use the ECALL instruction with arguments in registers (a0-a3):
-
-| Syscall | Code | Arguments | Returns |
-|---------|------|-----------|---------|
-| SYS_PUTCHAR | 1 | ch (a0) | 0 |
-| SYS_GETCHAR | 2 | none | character |
-| SYS_EXIT | 3 | none | never returns |
-| SYS_READFILE | 4 | filename (a0), buf (a1), len (a2) | bytes read |
-| SYS_WRITEFILE | 5 | filename (a0), buf (a1), len (a2) | bytes written |
-
-### Filesystem
-
-The filesystem is not a traditional filesystem implementation. Instead:
-- Files are stored in TAR USTAR format in a flat disk image.
-- The image is loaded into the kernel's in-memory file table at boot.
-- Maximum 2 files (FILES_MAX) can be tracked simultaneously.
-- Write operations modify the in-memory copy; changes are lost after shutdown.
-
-### Build Artifacts
-
-- `shell.elf`: User-space application (uncompressed ELF)
-- `shell.bin`: Binary-only user image (objcopy -O binary)
-- `shell.bin.o`: Shell binary embedded as object file (linked into kernel)
-- `kernel.elf`: Final kernel executable
-- `disk.tar`: TAR archive of disk/ directory contents
-- `*.map`: Linker maps showing symbol addresses
-- `qemu.log`: QEMU debug log

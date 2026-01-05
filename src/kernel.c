@@ -236,6 +236,7 @@ void handle_readfile_writefile(struct trap_frame *f){
     if (!file) {
         printf("file not found: %s\n", filename);
         f->a0 = -1;
+        return;
     }
     if (len > (int) sizeof(file->data))
         len = file->size;
@@ -325,13 +326,22 @@ void fs_init(void){
         read_write_disk(&disk[sector * SECTOR_SIZE], sector, false);
 
     unsigned off = 0;
+    for(; off < sizeof(disk); off += SECTOR_SIZE) {
+        struct tar_header *header = (struct tar_header *) &disk[off];
+        if (strcmp(header->magic, "ustar") == 0)
+            break;
+    }
+
+    if (off >= sizeof(disk))
+        PANIC("ustar header not found");
+
     for (int i = 0; i < FILES_MAX; i++){
         struct tar_header *header = (struct tar_header *) &disk[off];
         if (header->name[0] == '\0')
             break;
 
         if  (strcmp(header->magic, "ustar") != 0)
-            PANIC("invalid tar header: magic=\"%s\"", header->size);
+            PANIC("invalid tar header: magic=\"%s\"", header->magic);
 
         int filesz          = oct2int(header->size, sizeof(header->size));
         struct file *file   = &files[i];
@@ -414,11 +424,11 @@ void kernel_main(void) {
     read_write_disk(buf, 0, false /* read from disk */);
     printf("first sector: %s\n", buf);
 
-    strcpy(buf, "hello from kernel!!!\n");
+    // strcpy(buf, "hello from kernel!!!\n");
     read_write_disk(buf, 0, true /* write to the disk */);
 
     idle_proc = create_process(NULL, 0);
-    idle_proc->pid = 0; //idle
+    idle_proc->pid =    0; //idle
     current_proc = idle_proc;
 
     create_process(_binary_shell_bin_start, (size_t) _binary_shell_bin_size);

@@ -1,10 +1,10 @@
-# YuuOS
+# PraxisOS
 
-YuuOS is a minimalist, monolithic operating system kernel designed for the RISC-V 32-bit architecture. This is a study project implementing concepts from [operating-system-in-1000-lines](https://operating-system-in-1000-lines.vercel.app/ja/).
+PraxisOS is a minimalist, monolithic operating system kernel designed for the RISC-V 32-bit architecture. This is a study project implementing concepts from [operating-system-in-1000-lines](https://operating-system-in-1000-lines.vercel.app/ja/).
 
 ## Architectural Deep Dive
 
-YuuOS is built on a classic monolithic kernel model. While minimalist, it implements several core operating system concepts to support a functional, albeit simple, user-space environment.
+PraxisOS is built on a classic monolithic kernel model. While minimalist, it implements several core operating system concepts to support a functional, albeit simple, user-space environment.
 
 ### Memory Management
 
@@ -23,7 +23,7 @@ The kernel uses the RISC-V Sv32 virtual memory scheme, which implements a two-le
 
 ### Process Management and Scheduling
 
-YuuOS implements cooperative multitasking for a fixed number of processes (`PROCS_MAX`).
+PraxisOS implements cooperative multitasking for a fixed number of processes (`PROCS_MAX`).
 
 -   **Process Control Block:** The state of each process is maintained in a `struct process`, which contains its ID, state (`PROC_RUNNABLE`, `PROC_EXITED`, etc.), a pointer to its kernel stack, and a pointer to its root page table.
 
@@ -48,7 +48,7 @@ System calls provide the interface between user-space applications and kernel se
 
 ### VirtIO Block Device Driver
 
-A key feature of YuuOS is its driver for the VirtIO block device, the standard para-virtualized I/O mechanism in QEMU.
+A key feature of PraxisOS is its driver for the VirtIO block device, the standard para-virtualized I/O mechanism in QEMU.
 
 -   **Initialization:** The `virtio_blk_init` function performs the standard VirtIO device initialization sequence, negotiating with the device and setting up the required virtqueue.
 -   **Virtqueues:** Communication is managed via a single virtqueue, which consists of three main components:
@@ -69,11 +69,11 @@ The filesystem is not a traditional on-disk structure but rather an in-memory ca
 
 ## Getting Started
 
-Follow these instructions to set up the toolchain and run YuuOS.
+Follow these instructions to set up the toolchain and run PraxisOS.
 
 ### Prerequisites
 
-YuuOS requires a specific toolchain for building the RISC-V 32-bit kernel and user-space applications. You will need:
+PraxisOS requires a specific toolchain for building the RISC-V 32-bit kernel and user-space applications. You will need:
 
 - **Clang Compiler:** To compile C code for the `riscv32-unknown-elf` target.
 - **LLD Linker:** The LLVM linker, used by Clang.
@@ -123,7 +123,7 @@ Once the prerequisites are installed, you can build and run the operating system
 
 2.  **Interact with the Shell:**
 
-    After running the script, QEMU will launch, and you will be greeted by the YuuOS shell prompt:
+    After running the script, QEMU will launch, and you will be greeted by the PraxisOS shell prompt:
 
     ```
     >
